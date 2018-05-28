@@ -1,0 +1,22 @@
+{
+  "name": "mtg-jeweled-bird",
+  "version": "0.0.0",
+  "description": "A tool for a new MtG variant",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fabiocbinbutter/mtg-jeweled-bird.git"
+  },
+  "author": "Fabio Beltramini",
+  "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/fabiocbinbutter/mtg-jeweled-bird/issues"
+  },
+  "homepage": "https://github.com/fabiocbinbutter/mtg-jeweled-bird#readme",
+  "dependencies": {
+    "spirit": "^0.6.1"
+  }
+}
