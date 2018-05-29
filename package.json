@@ -17,6 +17,10 @@
   },
   "homepage": "https://github.com/fabiocbinbutter/mtg-jeweled-bird#readme",
   "dependencies": {
-    "spirit": "^0.6.1"
+    "bluebird": "^3.5.1",
+    "request": "^2.87.0",
+    "request-promise": "^4.2.2",
+    "spirit": "^0.6.1",
+    "spirit-router": "^0.5.0"
   }
 }

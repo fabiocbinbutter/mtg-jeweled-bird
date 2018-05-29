@@ -1,0 +1,157 @@
+<!doctype HTML>
+<html>
+<head>
+	<title>Jeweled Bird | A tool for a new MtG variant</title>
+</head>
+<body></body>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hyperapp/1.2.5/hyperapp.js" integrity="sha256-EO1vRmcxDsotgvYvFuhhr9KbV3zX4a0uop87FBqNVwo=" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fdaciuk-ajax/2.3.0/ajax.min.js" integrity="sha256-deVpz2KQ8L5xlUTHVQHLUVZsNGJEJY7ChjnVFeIaPgU=" crossorigin="anonymous"></script>
+<script>
+const {h,app} = hyperapp
+const $ = ajax()
+const state = {
+		route:"",
+		basis:"card",
+		sources:[],
+		valuation:"paper",
+		ante:"$2 per player",
+		players:[],
+		query:"",
+		pendingRequest:undefined,
+		results:[]
+	}
+const view = (s,a) =>
+h("div",{},[
+	h("div",{id:"header"},[
+		h("div",{id:"basis-ctl"},[
+			h("span",{},"Basis"),
+			h("select",{value:s.basis},[
+				h("option",{value:"card"},"Single-card"),
+				h("option",{value:"deck"},"Deck")
+			])
+		]),
+		h("div",{id:"valuation-ctl"},[
+			h("span",{},"Valuation"),
+			h("select",{value:s.valuation},[
+				h("option",{value:"paper"},"Paper (TCG Player Market Price)"),
+				h("option",{value:"online"},"MTGO (src?)")
+			])
+		]),
+		h("div",{id:"pool-ctl"},[
+			h("span",{},"Ante pool"),
+			h("input",{value:s.ante, onchange:evt=>a.set({ante:evt.target.value})})
+		])
+	]),
+	h("table",{id:"outcomes"},[
+		h("thead",{},[
+			h("tr",{},[
+				h("th",{},"Player"),
+				...s.players.map((p,i)=>i+(i==1?"st":i==2?"nd":i==3?"rd":"th"))
+			])
+		]),
+		h("tbody",{},s.players.map((player,p)=>
+			h("tr",{},[
+				h("td",{},[
+					h("div",{},player.name),
+					h("div",{class:"delete-cta",onclick:()=>a.removePlayer(p)},"x")
+				]),
+				...s.players.map((place,i)=>
+				h("td",{},''+i)
+				)
+			])
+		))
+	]),
+	h("button",{
+		onclick:()=>a.initSearch()
+	},"+"),
+	h("div",{id:"search", class:s.route=="search"?"on":"off"},[
+		h("ul",{},s.basis=="card"
+			?[
+				h("li",{},[h("img",{src:"https://gatherer.wizards.com/Images/favicon.ico",alt:"Commander", class:"favicon"})])
+				]
+			:[
+				h("li",{},[h("img",{src:"https://static.tappedout.net/s/favicon.ico",alt:"Tapped Out", class:"favicon"})])
+				//,
+				// h("li",{},[h("img",{src:"",alt:"MTG Goldfish", class:"favicon"})]),
+				// h("li",{},"Manastack"),
+				]
+		),
+		h("input",{
+			type:"text",
+			onchange:evt=>search(s,a,evt)
+		},[]),
+		h("ol",{id:"search-results"},
+			s.pendingRequest
+			?"Pending..."
+			:s.results.map(result=>h("div",{class:"result"},result))
+		)
+	])
+])
+
+const actions = {
+		state: value => state => state,
+		set: value => state => value,
+		route: v => s => ({route:v.route}),
+		flash: v => s => console.log(v), //TODO
+		initSearch: v => s => ({route:"search",query:"",results:[],pendingRequest:false}),
+		addPlayer: v => s => ({players:s.players.concat(v)}),
+		removePlayer: v => s => ({players:s.players.filter((p,i)=>i!=v)})
+	}
+
+const run = app(state,actions,view,document.body)
+run.route(getHashObj())
+
+
+async function search(s,a,evt){
+		const query = evt.target.value
+		if(s.pendingRequest){s.pendingRequest.abort()}
+		const debounce = wait(500)
+		a.set({query,pendingRequest:debounce})
+		try{await debounce}catch(e){}
+		const pendingRequest = $.get("/api/"+s.basis+"/search",{
+				query,
+				...(s.basis=="deck"?{sources: s.sources.join(",")}:{})
+			})
+		a.set({query,results:[],pendingRequest})
+		try{
+			const results = await pendingRequest
+		}catch(e){
+			a.flash(e)
+		}
+		a.set({query,results,pendingRequest:false})
+	}
+
+
+function getHashObj(){
+		return (location.hash
+				.slice(1)
+				.split('&')
+				.filter(Boolean)
+				.map(ss=>ss.replace(/^\//,"route="))
+				.map(ss=>ss.split('='))
+				.reduce((aa,a)=>({[decodeURIComponent(a[0])]:decodeURIComponent(a.slice(1).join('=')), ...aa}),{})
+			)
+	}
+function wait(delay){
+		var id = 0
+		var reject = null
+		var promise = new Promise((resolve, _reject) => {
+				reject = _reject
+				id = setTimeout(resolve, delay)
+			})
+		promise.abort = ()=>{if(id){
+				clearTimeout(id)
+				id=0
+				reject()
+			}}
+		return promise
+	}
+</script>
+<style>
+	#header {background-color:#FEE;}
+	#outcomes {background-color:#EEF;}
+	#search {background-color:#EFE;}
+	#search-results {background-color:#FEF;}
+	img.favicon {height:16px;width:16px;border-radius: 2px; border-width: 2px; border-style: solid; border-color:#333;}
+</style>
+</html>
