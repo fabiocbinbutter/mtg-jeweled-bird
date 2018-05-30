@@ -11,35 +11,36 @@ const {h,app} = hyperapp
 const $ = ajax()
 const state = {
 		route:"",
-		basis:"card",
-		sources:[],
+		basis:"test",
+		deckSources:["tappedout","mtggoldfish"],
 		valuation:"paper",
 		ante:"$2 per player",
 		players:[],
 		query:"",
 		pendingRequest:undefined,
-		results:[]
+		results:[],
+		resultPointer:0
 	}
 const view = (s,a) =>
 h("div",{},[
-	h("div",{id:"header"},[
+	h("div",{id:"header", class:"row"},[
 		h("div",{id:"basis-ctl"},[
-			h("span",{},"Basis"),
-			h("select",{value:s.basis},[
+			h("label",{for:"basis-sel"},"Basis"),
+			h("select",{id:"basis-sel",value:s.basis},[
 				h("option",{value:"card"},"Single-card"),
 				h("option",{value:"deck"},"Deck")
 			])
 		]),
 		h("div",{id:"valuation-ctl"},[
-			h("span",{},"Valuation"),
-			h("select",{value:s.valuation},[
+			h("label",{for:"valuation-sel"},"Valuation"),
+			h("select",{id:"valuation-sel",value:s.valuation},[
 				h("option",{value:"paper"},"Paper (TCG Player Market Price)"),
 				h("option",{value:"online"},"MTGO (src?)")
 			])
 		]),
 		h("div",{id:"pool-ctl"},[
-			h("span",{},"Ante pool"),
-			h("input",{value:s.ante, onchange:evt=>a.set({ante:evt.target.value})})
+			h("label",{for:"ante-input"},"Ante pool"),
+			h("input", {id:"ante-input",value:s.ante, onchange:evt=>a.set({ante:evt.target.value})})
 		])
 	]),
 	h("table",{id:"outcomes"},[
@@ -61,29 +62,24 @@ h("div",{},[
 			])
 		))
 	]),
-	h("button",{
-		onclick:()=>a.initSearch()
-	},"+"),
-	h("div",{id:"search", class:s.route=="search"?"on":"off"},[
-		h("ul",{},s.basis=="card"
-			?[
-				h("li",{},[h("img",{src:"https://gatherer.wizards.com/Images/favicon.ico",alt:"Commander", class:"favicon"})])
-				]
-			:[
-				h("li",{},[h("img",{src:"https://static.tappedout.net/s/favicon.ico",alt:"Tapped Out", class:"favicon"})])
-				//,
-				// h("li",{},[h("img",{src:"",alt:"MTG Goldfish", class:"favicon"})]),
-				// h("li",{},"Manastack"),
-				]
-		),
+	h("div",{id:"search", class:"col"},[
+		h("div",{class:"row sources"},s.basis=="card"?"":[
+			h("img",{class:~s.deckSources.indexOf("tappedout")?"on":"off", alt:"Tapped Out", src:"https://static.tappedout.net/s/favicon.ico"}),
+			h("img",{class:~s.deckSources.indexOf("mtggoldfish")?"on":"off", alt:"MTG Goldfish", src:"https://assets1.mtggoldfish.com/assets/goldfish-32-22599602a047942143b34b034de85b0968d377caf56ff4a12c06146a4c13b989.png"})
+			//+ manastack, mtgo?
+		]),
+		//h("label",{for:"search-input"},"Add a player"),
 		h("input",{
+			id:"search-input",
 			type:"text",
-			onchange:evt=>search(s,a,evt)
-		},[]),
-		h("ol",{id:"search-results"},
+			placeholder:"Search for a "+s.basis+" to add a player",
+			onkeyup:evt=>search(s,a,evt)
+		}),
+		h("div",{id:"search-results"},
 			s.pendingRequest
 			?"Pending..."
-			:s.results.map(result=>h("div",{class:"result"},result))
+			:s.results.map((result,r)=>
+					h("div",{class:"result "+(s.resultPointer==r?"on":"off")},result))
 		)
 	])
 ])
@@ -95,7 +91,9 @@ const actions = {
 		flash: v => s => console.log(v), //TODO
 		initSearch: v => s => ({route:"search",query:"",results:[],pendingRequest:false}),
 		addPlayer: v => s => ({players:s.players.concat(v)}),
-		removePlayer: v => s => ({players:s.players.filter((p,i)=>i!=v)})
+		removePlayer: v => s => ({players:s.players.filter((p,i)=>i!=v)}),
+		movePointer: v => s => ({resultPointer:max(0,min(s.results.length-1,s.resultPointer+v))})
+
 	}
 
 const run = app(state,actions,view,document.body)
@@ -103,22 +101,34 @@ run.route(getHashObj())
 
 
 async function search(s,a,evt){
+		if(evt.keyCode==40){a.movePointer(1); return;}
+		if(evt.keyCode==38){a.movePointer(-1); return;}
+		if(evt.keyCode==13){
+			if(s.results){
+				a.addPlayer({name:s.results[s.resultPointer]})
+			}
+			return;
+		}
 		const query = evt.target.value
 		if(s.pendingRequest){s.pendingRequest.abort()}
-		const debounce = wait(500)
+		if(query.length<=2){a.set({query,pendingRequest:false,results:[]});return}
+		const debounce = wait(750)
 		a.set({query,pendingRequest:debounce})
-		try{await debounce}catch(e){}
-		const pendingRequest = $.get("/api/"+s.basis+"/search",{
-				query,
-				...(s.basis=="deck"?{sources: s.sources.join(",")}:{})
-			})
-		a.set({query,results:[],pendingRequest})
 		try{
+			await debounce
+			const pendingRequest = $.get("/api/"+s.basis+"/search",{
+					query,
+					...(s.basis=="deck"?{sources: s.deckSources.join(",")}:{})
+				})
+			a.set({query,results:[],pendingRequest})
 			const results = await pendingRequest
+			a.set({query,results,pendingRequest:false,resultPointer:0})
 		}catch(e){
-			a.flash(e)
+			if(e){
+				a.set({pendingRequest:false})
+				a.flash(e)
+			}
 		}
-		a.set({query,results,pendingRequest:false})
 	}
 
 
@@ -139,19 +149,49 @@ function wait(delay){
 				reject = _reject
 				id = setTimeout(resolve, delay)
 			})
-		promise.abort = ()=>{if(id){
-				clearTimeout(id)
-				id=0
-				reject()
-			}}
-		return promise
+		// promise.abort = ()=>{if(id){
+		// 		clearTimeout(id)
+		// 		id=0
+		// 		reject()
+		// 	}}
+		// return promise
+		return {
+				//get promise() { return promise; },
+				then: (...args)=>{return promise.then(...args)},
+				catch: (...args)=>{return promise.catch(...args)},
+				abort: ()=>{
+						if(id){
+								clearTimeout(id)
+								id=0
+								reject()
+							}
+					}
+			}
 	}
+
+
+function min(a,b){return a<b?a:b}
+function max(a,b){return a>b?a:b}
 </script>
 <style>
-	#header {background-color:#FEE;}
+	.row {display:flex; flex-direction: row; justify-content: space-around; }
+	.col {display:flex; flex-direction: column; align-items: center;}
+	#header {background-color:#FEE; }
+	label {color:#666; display:block; font-size:0.8em; text-align:center; }
+	#header select, #header input {
+		height:3em; text-align: center;
+		border-radius: 1.5em; border-width: 1px; border-color:#AAA; border-style:solid; }
+	}
 	#outcomes {background-color:#EEF;}
 	#search {background-color:#EFE;}
+	#search.off {display:none;}
 	#search-results {background-color:#FEF;}
-	img.favicon {height:16px;width:16px;border-radius: 2px; border-width: 2px; border-style: solid; border-color:#333;}
+	.sources>img {
+		height:16px;width:16px;
+		border-radius: 2px; border-width: 2px; border-style: solid; border-color:#333;
+		margin: 8px 12px; overflow: hidden;
+	}
+	.sources>img.off {filter: grayscale(1);}
+	.result.on{background-color:#ccF;}
 </style>
 </html>
