@@ -3,6 +3,8 @@ const spirit = require("spirit").node
 const router = require("spirit-router")
 const http = require("http")
 const rp = require("request-promise")
+const memoizee = require("memoizee")
+
 const getJson = (uri) => rp({uri, json:true})
 //const Promise = require("bluebird")
 //const fs = Promise.promisifyAll(require("fs"), { suffix: "Promise" });
@@ -13,10 +15,12 @@ const cfg = {
 const app = router.define([
 		router.get("/", [], fileResponse),
 		router.get("/static/:filename", ["filename"], fileResponse),
-		router.get("/api/card/search",["query"],json(cardSearch)),
-		router.get("/api/card/detail",["name","valuation"],json(cardDetail)),
-		router.get("/api/deck/search",["query","sources"],json(deckSearch)),
-		router.get("/api/test/search",["query"],json(({query})=>(query.split(''	)))),
+		router.get("/api/card/search",["query"],middle( async query =>
+				(await getJson("https://api.scryfall.com/cards/autocomplete?q="+query)).data
+			)),
+		router.get("/api/card/detail",["id","valuation"],middle(cardDetail)),
+		router.get("/api/deck/search",["query","sources"],middle(deckSearch)),
+		router.get("/api/test/search",["query"],middle(({query})=>(query.split('')))),
 		// router.get("/t/:slug", ["slug"], getTappedOut)
 		// router.get("/g/:slug", [slug], getGoldfish)
 		// router.get("/s/:slug", [slug], getManastack)
@@ -39,16 +43,16 @@ async function fileResponse(filename){
 			}
 		//TODO confirm ../ in url doesn't expose parent dir's
 	}
-async function cardSearch({query}){
-		//https://scryfall.com/docs/api/cards/autocomplete
-		const result = await getJson("https://api.scryfall.com/cards/autocomplete?q="+query)
-		return result.data
-	}
+// async function cardSearch({query}){
+// 		//https://scryfall.com/docs/api/cards/autocomplete
+// 		const result = await getJson("https://api.scryfall.com/cards/autocomplete?q="+query)
+// 		return result.data
+// 	}
 
-async function cardDetail({name,valuation}){
+async function cardDetail({id,valuation}){
 		//https://scryfall.com/docs/api/cards/named
 		const result = await getJson("https://api.scryfall.com/cards/search"
-				+'?q=!"'+name+'"'
+				+'?q=!"'+id+'"'
 				+"&sort="+(valuation=="online"?"tix":"usd")
 			)
 		return result.data
@@ -56,20 +60,41 @@ async function cardDetail({name,valuation}){
 async function deckSearch({query,sources}){
 
 	}
-function json(fn){
+
+function peek(x){console.log(x);return x}
+//Middleware to memoize, JSONify and HTTPify a "plain" function
+function middle(fn){
+		"use strict";
+		const mfn = memoizee(
+			 	async function(...args){
+					return {
+						status:200,
+						headers:{"Content-Type": "application/json; charset=utf-8"},
+						body:JSON.stringify(await fn(...args))
+					}},
+				{
+						max: 5000, //Memoize LRU cache's max item count
+						maxAge: 24 * 60 * 60 //24 hours
+					}
+			)
 		return async function(...args){
 				try{
-						return {
-								status:200,
-								headers:{"Content-Type": "application/json; charset=utf-8"},
-								body:JSON.stringify(await fn(...args))
-							}
-					}catch(e){
-						console.log(e)
-						return {
-								status: e.status || 500,
-								headers:{"Content-Type": "application/json; charset=utf-8"},
-								body:JSON.stringify({error: e.message || "Error. See logs for details."})
+					return peek(await mfn(...args))
+				}
+				catch(e){
+						console.error(e)
+						try {
+							return {
+									status: e.status || 500,
+									headers:{"Content-Type": "application/json; charset=utf-8"},
+									body:JSON.stringify({error: e.message || "Error. See logs for details."})
+								}
+							}catch(e){
+								return{
+										status: e.status || 500,
+										headers:{"Content-Type": "application/json; charset=utf-8"},
+										body:"Error. See logs for details."
+									}
 							}
 					}
 			}

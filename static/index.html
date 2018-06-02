@@ -73,17 +73,23 @@ h("div",{},[
 			id:"search-input",
 			type:"text",
 			placeholder:"Search for a "+s.basis+" to add a player",
-			onkeyup:evt=>search(s,a,evt)
+			onkeydown:evt=>search(s,a,evt)
 		}),
 		h("div",{id:"search-results"},
 			s.pendingRequest
 			?"Pending..."
 			:s.results.map((result,r)=>
-					h("div",{class:"result "+(s.resultPointer==r?"on":"off")},result))
+					h("div",{
+							class:"result "+(s.resultPointer==r?"on":"off"),
+							onclick: evt=>a.selectSearchResult(r)
+						},result))
 		)
 	])
 ])
 
+const DOWN = 40
+const UP = 38
+const ENTER = 13
 const actions = {
 		state: value => state => state,
 		set: value => state => value,
@@ -92,27 +98,37 @@ const actions = {
 		initSearch: v => s => ({route:"search",query:"",results:[],pendingRequest:false}),
 		addPlayer: v => s => ({players:s.players.concat(v)}),
 		removePlayer: v => s => ({players:s.players.filter((p,i)=>i!=v)}),
-		movePointer: v => s => ({resultPointer:max(0,min(s.results.length-1,s.resultPointer+v))})
-
+		commandKeys: evt => s => {
+				if(evt.keyCode==DOWN){evt.preventDefault(); return {
+						resultPointer:max(0,min(s.results.length-1,s.resultPointer+1))
+					}}
+				if(evt.keyCode==UP){evt.preventDefault(); return {
+						resultPointer:max(0,min(s.results.length-1,s.resultPointer-1))
+					}}
+				if(evt.keyCode==ENTER){
+						evt.preventDefault();
+						a.selectSearchResult(s.resultPointer);
+						return {}
+					}
+			},
+		selectSearchResult: v => s => {
+				$.get("/api/"+s.basis+"/details",{
+						id:s.results[v==undefined?s.resultPointer:v],
+						valuation:s.valuation
+					}).then(details=>a.addPlayer)
+				return {results:[],resultPointer:0}
+			}
 	}
 
 const run = app(state,actions,view,document.body)
 run.route(getHashObj())
-
+document.addEventListener("keydown",evt=>run.commandKeys(evt),true)
 
 async function search(s,a,evt){
-		if(evt.keyCode==40){a.movePointer(1); return;}
-		if(evt.keyCode==38){a.movePointer(-1); return;}
-		if(evt.keyCode==13){
-			if(s.results){
-				a.addPlayer({name:s.results[s.resultPointer]})
-			}
-			return;
-		}
 		const query = evt.target.value
 		if(s.pendingRequest){s.pendingRequest.abort()}
 		if(query.length<=2){a.set({query,pendingRequest:false,results:[]});return}
-		const debounce = wait(750)
+		const debounce = wait(550)
 		a.set({query,pendingRequest:debounce})
 		try{
 			await debounce
