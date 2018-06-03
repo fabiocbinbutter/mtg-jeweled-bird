@@ -73,7 +73,7 @@ h("div",{},[
 			id:"search-input",
 			type:"text",
 			placeholder:"Search for a "+s.basis+" to add a player",
-			onkeydown:evt=>search(s,a,evt)
+			onkeyup:evt=>search(s,a,evt)
 		}),
 		h("div",{id:"search-results"},
 			s.pendingRequest
@@ -107,15 +107,15 @@ const actions = {
 					}}
 				if(evt.keyCode==ENTER){
 						evt.preventDefault();
-						a.selectSearchResult(s.resultPointer);
+						run.selectSearchResult(s.resultPointer);
 						return {}
 					}
 			},
 		selectSearchResult: v => s => {
-				$.get("/api/"+s.basis+"/details",{
+				$.get("/api/details/"+s.basis,{
 						id:s.results[v==undefined?s.resultPointer:v],
 						valuation:s.valuation
-					}).then(details=>a.addPlayer)
+					}).then(details=>run.addPlayer)
 				return {results:[],resultPointer:0}
 			}
 	}
@@ -126,14 +126,15 @@ document.addEventListener("keydown",evt=>run.commandKeys(evt),true)
 
 async function search(s,a,evt){
 		const query = evt.target.value
+		if(query==s.query){return;} //Keypresses that don't change the query
 		if(s.pendingRequest){s.pendingRequest.abort()}
 		if(query.length<=2){a.set({query,pendingRequest:false,results:[]});return}
 		const debounce = wait(550)
 		a.set({query,pendingRequest:debounce})
 		try{
 			await debounce
-			const pendingRequest = $.get("/api/"+s.basis+"/search",{
-					query,
+			const pendingRequest = $.get("/api/search/"+s.basis,{
+					q:query,
 					...(s.basis=="deck"?{sources: s.deckSources.join(",")}:{})
 				})
 			a.set({query,results:[],pendingRequest})
