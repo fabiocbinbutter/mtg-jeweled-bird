@@ -11,7 +11,8 @@ const getJson = (uri) => rp({uri, json:true})
 const cfg = {
 		port:7650
 	}
-const cardCache = {}
+const cardCache = new Map();
+
 const app = router.define([
 		router.get("/", [], fileResponse),
 		router.get("/static/:filename", ["filename"], fileResponse),
@@ -59,20 +60,47 @@ async function fileResponse(filename){
 		//TODO confirm ../ in url doesn't expose parent dir's
 	}
 async function getValue({cardsLines,valuation}){
-		const cacheLimit = Date.now()
+		const now = Date.now()
+		const tooOld = now - 24 * 60 * 60
 		const cards = cardsLines
 				.map(str => str.match(/^([0-9]+) ?x? ?(.*$)/))
 				.map(matches => ({name:matches[2], qty:0+(matches[1]||"1")}))
 				.reduce((idx,cardLine) =>({...idx, [card.name]:{
 						name:cardLine.name,
 						qty: cardLine.qty+((idx[cardLine.name]||{}).qty||0),
-						...cardCache[card.name]
+						...(cardCache.get(card.name)||{})
 					}}),{})
-		const missingCardData =
-				Object.entries(cards)
-				.filter(([name,data])=>!data.retrieved || data.retrieved<cacheLimit)
-				//CONTINUE HERE
-		const cardData = rp("https://api.scryfall.com/cards/search?order=usd&q="
+		const cardsMissingData =
+				Object.keys(cards)
+				.filter(name=>((cardCache.get(name)||{}).retrieved||0)<tooOld)
+		if(cardsMissingData.length){
+				if(cardsMissingData.length>175){throw "Card list is longer than allowed by Scryfall API."}
+				(await rp(
+						"https://api.scryfall.com/cards/search?order=usd&q="
+						+encodeURIComponent(cardsMissingData.map(c=>'!"'+c+'"').join(" or "))
+					))
+				.data
+				.map(({name, image_uris,usd,tix})=>({
+						name, usd, tix,
+						img: image_uris.small,
+						updated: now
+					}))
+				.forEach(card=>cardCache.set([card.name,card]))
+			}
+		const pricedCards = Object.entries(cards).map([name,card]=>{
+				var data = cardCache.get(name)||{}
+				return { #CONTINUE HERE
+						name,
+						img,
+						qty,
+						usd,
+						tix,
+						usd_x_qty,
+						usd_x_qty,
+						updates
+					}
+			})
+
 
 	}
 
