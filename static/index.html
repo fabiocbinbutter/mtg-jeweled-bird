@@ -3,87 +3,66 @@
 <head>
 	<title>Jeweled Bird | A tool for a new MtG variant</title>
 </head>
-<body></body>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/hyperapp/1.2.5/hyperapp.js" integrity="sha256-EO1vRmcxDsotgvYvFuhhr9KbV3zX4a0uop87FBqNVwo=" crossorigin="anonymous"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/fdaciuk-ajax/2.3.0/ajax.min.js" integrity="sha256-deVpz2KQ8L5xlUTHVQHLUVZsNGJEJY7ChjnVFeIaPgU=" crossorigin="anonymous"></script>
+<body><div id="app">
+	<input id="omni" type="text" placeholder="Add a card, deck, or game" />
+</div></body>
+<style>
+html {background: linear-gradient(to bottom, #204921 0%,#527a4f 43%,#4c3c89 100%); min-height: 100vh; background-position: fixed;}
+#app{ min-width: 400px; width:80%; margin: 4em auto 0 auto; display: block; }
+#omni {width:100%;font-size:1.6em; height:2.5em; border-radius:1.25em; }
+</style>
+<script src="/static/hyperapp-1.2.5.js" integrity="sha256-EO1vRmcxDsotgvYvFuhhr9KbV3zX4a0uop87FBqNVwo=" crossorigin="anonymous"></script>
+<script src="/static/fdaciuk-ajax-2.3.0.js" integrity="sha256-deVpz2KQ8L5xlUTHVQHLUVZsNGJEJY7ChjnVFeIaPgU=" crossorigin="anonymous"></script>
 <script>
 const {h,app} = hyperapp
 const $ = ajax()
 const state = {
-		route:"",
-		basis:"test",
-		deckSources:["tappedout","mtggoldfish"],
+		query:"",
+		pending:{},
+		resultsByQuery:{},
+		resultPointer:0,
 		valuation:"paper",
 		ante:"$2 per player",
-		players:[],
-		query:"",
-		pendingRequest:undefined,
-		results:[],
-		resultPointer:0
+		entries:[]
 	}
 const view = (s,a) =>
-h("div",{},[
-	h("div",{id:"header", class:"row"},[
-		h("div",{id:"basis-ctl"},[
-			h("label",{for:"basis-sel"},"Basis"),
-			h("select",{id:"basis-sel",value:s.basis},[
-				h("option",{value:"card"},"Single-card"),
-				h("option",{value:"deck"},"Deck")
-			])
+h("div",{id:"app"},[
+	h("input",{
+		id:"omni",
+		type:"text",
+		placeholder:"Add a card, deck, or game",
+		onkeyup:evt=>a.changeSearch(evt)
+	}),
+	h("div",{id:"search-results"},[
+		h("div",{id:"pending"},[
+			h("div",{class:s.pending.test?"active":"inactive"},"[Test...]"),
+			h("div",{class:s.pending.card?"active":"inactive"},"[Card...]"),
+			h("div",{class:s.pending.list?"active":"inactive"},"[List...]")
 		]),
-		h("div",{id:"valuation-ctl"},[
-			h("label",{for:"valuation-sel"},"Valuation"),
-			h("select",{id:"valuation-sel",value:s.valuation},[
-				h("option",{value:"usd"},"Paper (TCG Player Market Price)"),
-				h("option",{value:"tix"},"MTGO (src?)")
-			])
-		]),
-		h("div",{id:"pool-ctl"},[
-			h("label",{for:"ante-input"},"Ante pool"),
-			h("input", {id:"ante-input",value:s.ante, onchange:evt=>a.set({ante:evt.target.value})})
-		])
-	]),
-	h("table",{id:"outcomes"},[
-		h("thead",{},[
-			h("tr",{},[
-				h("th",{},"Player"),
-				...s.players.map((p,i)=>i+(i==1?"st":i==2?"nd":i==3?"rd":"th"))
-			])
-		]),
-		h("tbody",{},s.players.map((player,p)=>
-			h("tr",{},[
-				h("td",{},[
-					h("div",{},player.name),
-					h("div",{class:"delete-cta",onclick:()=>a.removePlayer(p)},"x")
-				]),
-				...s.players.map((place,i)=>
-				h("td",{},''+i)
-				)
+		h("div",{id:"results"},(s.resultsByQuery[s.query]||[]).map((result,r)=>
+			h("div",{
+					class:"result "+(s.resultPointer==r?"on":"off"),
+					onclick: evt=>a.selectSearchResult(r)
+				},[
+					h("img",{},[]),
+					h("div",{class:"name"},result && result.name || result),
+					h("div",{class:"details"},result && result.details || "No details")
 			])
 		))
 	]),
-	h("div",{id:"search", class:"col"},[
-		h("div",{class:"row sources"},s.basis=="card"?"":[
-			h("img",{class:~s.deckSources.indexOf("tappedout")?"on":"off", alt:"Tapped Out", src:"https://static.tappedout.net/s/favicon.ico"}),
-			h("img",{class:~s.deckSources.indexOf("mtggoldfish")?"on":"off", alt:"MTG Goldfish", src:"https://assets1.mtggoldfish.com/assets/goldfish-32-22599602a047942143b34b034de85b0968d377caf56ff4a12c06146a4c13b989.png"})
-			//+ manastack, mtgo?
-		]),
-		//h("label",{for:"search-input"},"Add a player"),
-		h("input",{
-			id:"search-input",
-			type:"text",
-			placeholder:"Search for a "+s.basis+" to add a player",
-			onkeyup:evt=>search(s,a,evt)
-		}),
-		h("div",{id:"search-results"},
-			s.pendingRequest
-			?"Pending..."
-			:s.results.map((result,r)=>
-					h("div",{
-							class:"result "+(s.resultPointer==r?"on":"off"),
-							onclick: evt=>a.selectSearchResult(r)
-						},result))
-		)
+	h("div",{id:"entries"},[
+		h("div",{},s.entries.map((entry,e)=>
+			h("div",{class:"entry"},[
+				h("div",{},entry.name),
+				h("div",{class:"delete-cta",onclick:()=>a.removeEntry(p)},"x"),
+				h("details",{},[
+					h("summary",{},"1st: ..."),
+					h("ol",{}, ...s.entries.filter((_,e)=>e>0).map((entry,e)=>
+						h("li",{},''+(1+e)+(e==1?"nd":e==2?"rd":"th"))
+					))
+				])
+			])
+		))
 	])
 ])
 
@@ -95,15 +74,29 @@ const actions = {
 		set: value => state => value,
 		route: v => s => ({route:v.route}),
 		flash: v => s => console.log(v), //TODO
-		initSearch: v => s => ({route:"search",query:"",results:[],pendingRequest:false}),
-		addPlayer: v => s => ({players:s.players.concat(v)}),
-		removePlayer: v => s => ({players:s.players.filter((p,i)=>i!=v)}),
+		clearSearch: v => s => (
+				run.clearPending(),
+				{query:"",resultPointer:0}
+			),
+		addPending: add => s => ({pending: Object.entries(add).reduce((obj,[key,promise])=>({
+				...obj,
+				[key]:promise.then(val=>(run.removePending(key),val))
+			}),s.pending)}),
+		clearPending: () => s => (
+				Object.values(s.pending).forEach(p=> p && p.abort && p.abort())
+				,{pending:[]}
+			),
+		removePending: key => s => ({pending:{
+				...s.pending, [key]:undefined
+			}}),
+		addEntry: v => s => ({entries:s.enties.concat(v)}),
+		removeEntry: v => s => ({entries:s.entries.filter((p,i)=>i!=v)}),
 		commandKeys: evt => s => {
 				if(evt.keyCode==DOWN){evt.preventDefault(); return {
-						resultPointer:max(0,min(s.results.length-1,s.resultPointer+1))
+						resultPointer:max(0,min(s.resultsByQuery[s.query].length-1,s.resultPointer+1))
 					}}
 				if(evt.keyCode==UP){evt.preventDefault(); return {
-						resultPointer:max(0,min(s.results.length-1,s.resultPointer-1))
+						resultPointer:max(0,min(s.resultsByQuery[s.query].length-1,s.resultPointer-1))
 					}}
 				if(evt.keyCode==ENTER){
 						evt.preventDefault();
@@ -115,39 +108,56 @@ const actions = {
 				$.get("/api/details/"+s.basis,{
 						id:s.results[v==undefined?s.resultPointer:v],
 						valuation:s.valuation
-					}).then(details=>run.addPlayer)
+					}).then(details=>run.addEntry)
 				return {results:[],resultPointer:0}
+			},
+		clearResults: query => s => ({resultsByQuery: {...s.resultsByQuery[query], [query]:[]}}),
+		addResults: ({query, results}) => s => ({
+				resultsByQuery:{...s.resultsByQuery, [query]:[...(s.resultsByQuery[query]||[]), ...results]}
+			}),
+		changeSearch: evt => async s => {
+				const query = evt.target.value
+				if(query==s.query){return;} //Keypresses that don't change the query
+				run.set({query})
+				run.clearPending()
+				run.clearResults(query)
+				if(query.length<=2){return}
+				try{
+						if(~query.indexOf("\n")){ //Assume it's a pasted decklist
+								let request = $.get("/api/details/list?q="+encodeURIComponent(query))
+								run.addPending({list:request})
+								let details = await request
+								run.clearSearch()
+								run.addEntry(details)
+								return
+							}
+						else if(query.match(/^(https?:)?\/\//)){ //Lookup by URI
+								console.warn("TODO");
+								return
+							}
+						else {
+								let debounce = wait(550)
+								run.addPending({wait:debounce})
+								await debounce
+								run.addPending({
+										test:$.get("/api/search/test",{q:query}).then(results=>run.addResults({query,results})),
+										card:$.get("/api/search/card",{q:query}).then(results=>run.addResults({query,results}))
+									})
+								return
+							}
+					}catch(e){
+						if(e){
+								//a.set({pending:[]})
+								run.flash(e)
+							}
+					}
+
 			}
 	}
 
 const run = app(state,actions,view,document.body)
 run.route(getHashObj())
 document.addEventListener("keydown",evt=>run.commandKeys(evt),true)
-
-async function search(s,a,evt){
-		const query = evt.target.value
-		if(query==s.query){return;} //Keypresses that don't change the query
-		if(s.pendingRequest){s.pendingRequest.abort()}
-		if(query.length<=2){a.set({query,pendingRequest:false,results:[]});return}
-		const debounce = wait(550)
-		a.set({query,pendingRequest:debounce})
-		try{
-			await debounce
-			const pendingRequest = $.get("/api/search/"+s.basis,{
-					q:query,
-					...(s.basis=="deck"?{sources: s.deckSources.join(",")}:{})
-				})
-			a.set({query,results:[],pendingRequest})
-			const results = await pendingRequest
-			a.set({query,results,pendingRequest:false,resultPointer:0})
-		}catch(e){
-			if(e){
-				a.set({pendingRequest:false})
-				a.flash(e)
-			}
-		}
-	}
-
 
 function getHashObj(){
 		return (location.hash
@@ -166,12 +176,6 @@ function wait(delay){
 				reject = _reject
 				id = setTimeout(resolve, delay)
 			})
-		// promise.abort = ()=>{if(id){
-		// 		clearTimeout(id)
-		// 		id=0
-		// 		reject()
-		// 	}}
-		// return promise
 		return {
 				//get promise() { return promise; },
 				then: (...args)=>{return promise.then(...args)},
@@ -210,5 +214,10 @@ function max(a,b){return a>b?a:b}
 	}
 	.sources>img.off {filter: grayscale(1);}
 	.result.on{background-color:#ccF;}
+	.result{height:5em;}
+	.result>img{height:4em;width:4em;margin:0.5em;float:left}
+	#pending {height:1em; display:flex; flex-direction: row }
+	#pending>div {justify-content: space-around}
+	#pending>div.inactive {display:none}
 </style>
 </html>

@@ -1,0 +1,214 @@
+<!doctype HTML>
+<html>
+<head>
+	<title>Jeweled Bird | A tool for a new MtG variant</title>
+</head>
+<body></body>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hyperapp/1.2.5/hyperapp.js" integrity="sha256-EO1vRmcxDsotgvYvFuhhr9KbV3zX4a0uop87FBqNVwo=" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fdaciuk-ajax/2.3.0/ajax.min.js" integrity="sha256-deVpz2KQ8L5xlUTHVQHLUVZsNGJEJY7ChjnVFeIaPgU=" crossorigin="anonymous"></script>
+<script>
+const {h,app} = hyperapp
+const $ = ajax()
+const state = {
+		route:"",
+		basis:"test",
+		deckSources:["tappedout","mtggoldfish"],
+		valuation:"paper",
+		ante:"$2 per player",
+		players:[],
+		query:"",
+		pendingRequest:undefined,
+		results:[],
+		resultPointer:0
+	}
+const view = (s,a) =>
+h("div",{},[
+	h("div",{id:"header", class:"row"},[
+		h("div",{id:"basis-ctl"},[
+			h("label",{for:"basis-sel"},"Basis"),
+			h("select",{id:"basis-sel",value:s.basis},[
+				h("option",{value:"card"},"Single-card"),
+				h("option",{value:"deck"},"Deck")
+			])
+		]),
+		h("div",{id:"valuation-ctl"},[
+			h("label",{for:"valuation-sel"},"Valuation"),
+			h("select",{id:"valuation-sel",value:s.valuation},[
+				h("option",{value:"usd"},"Paper (TCG Player Market Price)"),
+				h("option",{value:"tix"},"MTGO (src?)")
+			])
+		]),
+		h("div",{id:"pool-ctl"},[
+			h("label",{for:"ante-input"},"Ante pool"),
+			h("input", {id:"ante-input",value:s.ante, onchange:evt=>a.set({ante:evt.target.value})})
+		])
+	]),
+	h("table",{id:"outcomes"},[
+		h("thead",{},[
+			h("tr",{},[
+				h("th",{},"Player"),
+				...s.players.map((p,i)=>i+(i==1?"st":i==2?"nd":i==3?"rd":"th"))
+			])
+		]),
+		h("tbody",{},s.players.map((player,p)=>
+			h("tr",{},[
+				h("td",{},[
+					h("div",{},player.name),
+					h("div",{class:"delete-cta",onclick:()=>a.removePlayer(p)},"x")
+				]),
+				...s.players.map((place,i)=>
+				h("td",{},''+i)
+				)
+			])
+		))
+	]),
+	h("div",{id:"search", class:"col"},[
+		h("div",{class:"row sources"},s.basis=="card"?"":[
+			h("img",{class:~s.deckSources.indexOf("tappedout")?"on":"off", alt:"Tapped Out", src:"https://static.tappedout.net/s/favicon.ico"}),
+			h("img",{class:~s.deckSources.indexOf("mtggoldfish")?"on":"off", alt:"MTG Goldfish", src:"https://assets1.mtggoldfish.com/assets/goldfish-32-22599602a047942143b34b034de85b0968d377caf56ff4a12c06146a4c13b989.png"})
+			//+ manastack, mtgo?
+		]),
+		//h("label",{for:"search-input"},"Add a player"),
+		h("input",{
+			id:"search-input",
+			type:"text",
+			placeholder:"Search for a "+s.basis+" to add a player",
+			onkeyup:evt=>search(s,a,evt)
+		}),
+		h("div",{id:"search-results"},
+			s.pendingRequest
+			?"Pending..."
+			:s.results.map((result,r)=>
+					h("div",{
+							class:"result "+(s.resultPointer==r?"on":"off"),
+							onclick: evt=>a.selectSearchResult(r)
+						},result))
+		)
+	])
+])
+
+const DOWN = 40
+const UP = 38
+const ENTER = 13
+const actions = {
+		state: value => state => state,
+		set: value => state => value,
+		route: v => s => ({route:v.route}),
+		flash: v => s => console.log(v), //TODO
+		initSearch: v => s => ({route:"search",query:"",results:[],pendingRequest:false}),
+		addPlayer: v => s => ({players:s.players.concat(v)}),
+		removePlayer: v => s => ({players:s.players.filter((p,i)=>i!=v)}),
+		commandKeys: evt => s => {
+				if(evt.keyCode==DOWN){evt.preventDefault(); return {
+						resultPointer:max(0,min(s.results.length-1,s.resultPointer+1))
+					}}
+				if(evt.keyCode==UP){evt.preventDefault(); return {
+						resultPointer:max(0,min(s.results.length-1,s.resultPointer-1))
+					}}
+				if(evt.keyCode==ENTER){
+						evt.preventDefault();
+						run.selectSearchResult(s.resultPointer);
+						return {}
+					}
+			},
+		selectSearchResult: v => s => {
+				$.get("/api/details/"+s.basis,{
+						id:s.results[v==undefined?s.resultPointer:v],
+						valuation:s.valuation
+					}).then(details=>run.addPlayer)
+				return {results:[],resultPointer:0}
+			}
+	}
+
+const run = app(state,actions,view,document.body)
+run.route(getHashObj())
+document.addEventListener("keydown",evt=>run.commandKeys(evt),true)
+
+async function search(s,a,evt){
+		const query = evt.target.value
+		if(query==s.query){return;} //Keypresses that don't change the query
+		if(s.pendingRequest){s.pendingRequest.abort()}
+		if(query.length<=2){a.set({query,pendingRequest:false,results:[]});return}
+		const debounce = wait(550)
+		a.set({query,pendingRequest:debounce})
+		try{
+			await debounce
+			const pendingRequest = $.get("/api/search/"+s.basis,{
+					q:query,
+					...(s.basis=="deck"?{sources: s.deckSources.join(",")}:{})
+				})
+			a.set({query,results:[],pendingRequest})
+			const results = await pendingRequest
+			a.set({query,results,pendingRequest:false,resultPointer:0})
+		}catch(e){
+			if(e){
+				a.set({pendingRequest:false})
+				a.flash(e)
+			}
+		}
+	}
+
+
+function getHashObj(){
+		return (location.hash
+				.slice(1)
+				.split('&')
+				.filter(Boolean)
+				.map(ss=>ss.replace(/^\//,"route="))
+				.map(ss=>ss.split('='))
+				.reduce((aa,a)=>({[decodeURIComponent(a[0])]:decodeURIComponent(a.slice(1).join('=')), ...aa}),{})
+			)
+	}
+function wait(delay){
+		var id = 0
+		var reject = null
+		var promise = new Promise((resolve, _reject) => {
+				reject = _reject
+				id = setTimeout(resolve, delay)
+			})
+		// promise.abort = ()=>{if(id){
+		// 		clearTimeout(id)
+		// 		id=0
+		// 		reject()
+		// 	}}
+		// return promise
+		return {
+				//get promise() { return promise; },
+				then: (...args)=>{return promise.then(...args)},
+				catch: (...args)=>{return promise.catch(...args)},
+				abort: ()=>{
+						if(id){
+								clearTimeout(id)
+								id=0
+								reject()
+							}
+					}
+			}
+	}
+
+
+function min(a,b){return a<b?a:b}
+function max(a,b){return a>b?a:b}
+</script>
+<style>
+	.row {display:flex; flex-direction: row; justify-content: space-around; }
+	.col {display:flex; flex-direction: column; align-items: center;}
+	#header {background-color:#FEE; }
+	label {color:#666; display:block; font-size:0.8em; text-align:center; }
+	#header select, #header input {
+		height:3em; text-align: center;
+		border-radius: 1.5em; border-width: 1px; border-color:#AAA; border-style:solid; }
+	}
+	#outcomes {background-color:#EEF;}
+	#search {background-color:#EFE;}
+	#search.off {display:none;}
+	#search-results {background-color:#FEF;}
+	.sources>img {
+		height:16px;width:16px;
+		border-radius: 2px; border-width: 2px; border-style: solid; border-color:#333;
+		margin: 8px 12px; overflow: hidden;
+	}
+	.sources>img.off {filter: grayscale(1);}
+	.result.on{background-color:#ccF;}
+</style>
+</html>
